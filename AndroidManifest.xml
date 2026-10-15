@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="research.pico.librarycategories" android:versionCode="2" android:versionName="0.2.0">
+<uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29"/>
+<application android:label="PICO Library Categories" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
+<meta-data android:name="xposedmodule" android:value="true"/><meta-data android:name="xposedminversion" android:value="93"/><meta-data android:name="xposeddescription" android:value="Custom Library categories, ordering and app assignments"/><meta-data android:name="xposedscope" android:resource="@array/scope"/>
+<activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="pico.vr.position" android:value="near"/></activity>
+</application></manifest>
