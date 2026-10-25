@@ -84,6 +84,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         XposedHelpers.findAndHookMethod(activityType,"onResume",new XC_MethodHook(){
             @Override protected void afterHookedMethod(MethodHookParam p){
                 Activity a=(Activity)p.thisObject;
+                a.getWindow().getDecorView().post(()->setupHeaderManageButton(a));
                 if(a.getIntent().getBooleanExtra(MANAGE,false)){a.getIntent().removeExtra(MANAGE);a.getWindow().getDecorView().post(()->CategoryUi.manage(a,store(a),()->refresh(a)));}
             }
         });
@@ -139,6 +140,81 @@ public final class HookEntry implements IXposedHookLoadPackage {
         });
         XposedBridge.log("PICO Categories: Library hooks installed");
     }
+    private void setupHeaderManageButton(Activity a){
+        if(a==null||a.isFinishing())return;
+        View decor=a.getWindow().getDecorView();
+        TextView libraryTv=findLibraryTitleView(decor);
+        if(libraryTv==null){
+            decor.postDelayed(()->setupHeaderManageButton(a),200);
+            return;
+        }
+        if(!(libraryTv.getParent() instanceof ViewGroup))return;
+        ViewGroup parent=(ViewGroup)libraryTv.getParent();
+
+        if(decor.findViewWithTag("pico_manage_header_btn")!=null)return;
+
+        ImageView btn=new ImageView(a);
+        btn.setTag("pico_manage_header_btn");
+        btn.setFocusable(true);
+        btn.setClickable(true);
+        btn.setImageDrawable(a.getDrawable(android.R.drawable.ic_menu_manage));
+        btn.setColorFilter(0xFFDCDCDC);
+        btn.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+
+        int dp32=(int)(32*a.getResources().getDisplayMetrics().density);
+        int dp8=(int)(8*a.getResources().getDisplayMetrics().density);
+        int dp12=(int)(12*a.getResources().getDisplayMetrics().density);
+
+        btn.setPadding(dp8/2,dp8/2,dp8/2,dp8/2);
+
+        btn.setOnClickListener(v->{
+            Activity act=activity(v.getContext());
+            if(act!=null){
+                CategoryUi.manage(act,store(act),()->refresh(act));
+            }
+        });
+
+        if(parent instanceof LinearLayout&&((LinearLayout)parent).getOrientation()==LinearLayout.VERTICAL){
+            int index=parent.indexOfChild(libraryTv);
+            ViewGroup.LayoutParams origLp=libraryTv.getLayoutParams();
+            parent.removeView(libraryTv);
+
+            LinearLayout rowContainer=new LinearLayout(a);
+            rowContainer.setOrientation(LinearLayout.HORIZONTAL);
+            rowContainer.setGravity(Gravity.CENTER_VERTICAL);
+
+            LinearLayout.LayoutParams btnLp=new LinearLayout.LayoutParams(dp32,dp32);
+            btnLp.leftMargin=dp12;
+
+            rowContainer.addView(libraryTv,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+            rowContainer.addView(btn,btnLp);
+
+            parent.addView(rowContainer,index,origLp);
+        }else{
+            int index=parent.indexOfChild(libraryTv);
+            LinearLayout.LayoutParams btnLp=new LinearLayout.LayoutParams(dp32,dp32);
+            btnLp.leftMargin=dp12;
+            btnLp.gravity=Gravity.CENTER_VERTICAL;
+            parent.addView(btn,index+1,btnLp);
+        }
+    }
+    private static TextView findLibraryTitleView(View root){
+        if(root==null||root.getVisibility()!=View.VISIBLE)return null;
+        if(root instanceof TextView){
+            TextView tv=(TextView)root;
+            if("Library".equalsIgnoreCase(tv.getText().toString().trim())){
+                return tv;
+            }
+        }
+        if(root instanceof ViewGroup){
+            ViewGroup g=(ViewGroup)root;
+            for(int i=0;i<g.getChildCount();i++){
+                TextView tv=findLibraryTitleView(g.getChildAt(i));
+                if(tv!=null)return tv;
+            }
+        }
+        return null;
+    }
     private void makeScrollable(ViewGroup nav){
         if(nav.getParent() instanceof ScrollView||!(nav.getParent() instanceof ViewGroup))return;
         ViewGroup parent=(ViewGroup)nav.getParent();int index=parent.indexOfChild(nav);
@@ -186,6 +262,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
     }
     private void refresh(Activity a){
         try{
+            a.getWindow().getDecorView().post(()->setupHeaderManageButton(a));
             Navigation current=navigation(a);
             if(current!=null){
                 List<String> expected=new ArrayList<>();for(Categories.Category c:categories.items)if(!c.hidden&&(c.custom()||current.stock.containsKey(c.id)))expected.add(c.id+"/"+c.name);
@@ -204,7 +281,6 @@ public final class HookEntry implements IXposedHookLoadPackage {
             ((TextView)XposedHelpers.callMethod(row,"getTextView")).setText(c.name);next.add(row);
         }
         if(next.isEmpty()){View all=n.stock.get("all");if(all!=null)next.add(all);}
-        View manage=(View)XposedHelpers.callMethod(n.view,"n",context.getDrawable(android.R.drawable.ic_menu_manage),"Manage categories…");manage.setTag(MANAGE);next.add(manage);
         // Keep header/search children, but update BOTH the visual and selection-index model.
         for(View old:n.visible)n.view.removeView(old);
         SparseArray<Object> items=(SparseArray<Object>)XposedHelpers.getObjectField(n.section,"d");items.clear();
