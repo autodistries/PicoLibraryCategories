@@ -43,7 +43,9 @@ final class CategoryUi {
             add(row,c.hidden?"Show":"Hide",()->{c.hidden=!c.hidden;save(a,data,changed);dialog.dismiss();manage(a,data,changed);});
             if(c.custom()){
                 add(row,"Apps…",()->{dialog.dismiss();pickApps(a,data,c,changed);});
-                add(row,"Delete",()->new AlertDialog.Builder(a).setTitle("Delete "+c.name+"?").setMessage("Apps stay installed. Only this category is removed.").setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{data.items.remove(c);save(a,data,changed);dialog.dismiss();manage(a,data,changed);}).show());
+                if(!c.id.equals(CategoryModel.HIDDEN_ID)){
+                    add(row,"Delete",()->new AlertDialog.Builder(a).setTitle("Delete "+c.name+"?").setMessage("Apps stay installed. Only this category is removed.").setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{data.items.remove(c);save(a,data,changed);dialog.dismiss();manage(a,data,changed);}).show());
+                }
             }
         }
         scroll.addView(box);dialog.setView(scroll);
@@ -51,7 +53,7 @@ final class CategoryUi {
     }
     private static void add(LinearLayout row,String text,Runnable action){Button b=new Button(row.getContext());b.setText(text);row.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(v->action.run());}
     static void assign(Activity a,Categories data,String pkg,String label,Runnable changed){
-        List<Categories.Category> list=new ArrayList<>();for(Categories.Category c:data.items)if(c.custom())list.add(c);
+        List<Categories.Category> list=new ArrayList<>();for(Categories.Category c:data.items)if(c.custom()&&!c.id.equals(CategoryModel.HIDDEN_ID))list.add(c);
         String[] names=new String[list.size()];boolean[] selected=new boolean[list.size()];
         for(int i=0;i<list.size();i++){names[i]=list.get(i).name+(list.get(i).hidden?" (hidden)":"");selected[i]=list.get(i).members.contains(pkg);}
         AlertDialog.Builder b=new AlertDialog.Builder(a).setTitle(label+" — categories").setNegativeButton("Cancel",null)
@@ -76,3 +78,4 @@ final class CategoryUi {
         }catch(Throwable failure){XposedBridge.log("PICO Categories: app picker unavailable "+failure);Toast.makeText(a,"Open Library's app list first",Toast.LENGTH_LONG).show();}
     }
 }
+

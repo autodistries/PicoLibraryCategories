@@ -17,7 +17,14 @@ final class Categories extends CategoryModel {
                 Category c=new Category(id,name);c.hidden=row.optBoolean("hidden",false);
                 JSONArray apps=row.optJSONArray("members");if(apps!=null)for(int n=0;n<apps.length();n++)c.members.add(apps.getString(n));items.add(c);
             }
+            ensureHidden();
         }catch(JSONException failure){throw new IllegalStateException("Saved category data is invalid; left unchanged",failure);}
+    }
+    void setAppHidden(String pkg,boolean hide){
+        Category c=ensureHidden();
+        if(hide)c.members.add(pkg);
+        else c.members.remove(pkg);
+        save();
     }
     void save(){
         try{JSONArray data=new JSONArray();for(Category c:items){JSONObject row=new JSONObject();row.put("id",c.id);row.put("name",c.name);row.put("hidden",c.hidden);row.put("members",new JSONArray(new TreeSet<>(c.members)));data.put(row);}
@@ -25,3 +32,4 @@ final class Categories extends CategoryModel {
         }catch(JSONException failure){throw new IllegalStateException(failure);}
     }
 }
+
