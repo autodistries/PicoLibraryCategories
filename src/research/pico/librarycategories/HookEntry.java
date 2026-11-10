@@ -67,7 +67,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         XposedHelpers.findAndHookMethod(navType,"t",View.class,new XC_MethodHook(){
             @Override protected void beforeHookedMethod(MethodHookParam p){
                 View item=(View)p.args[0];if(!MANAGE.equals(item.getTag()))return;
-                p.setResult(null);Activity a=activity(item.getContext());if(a!=null)CategoryUi.manage(a,store(a),()->refresh(a));
+                p.setResult(null);Activity a=activity(item.getContext());if(a!=null)CategoryUi.CategoriesManager(a,store(a),()->refresh(a));
             }
         });
         XposedHelpers.findAndHookMethod(activityType,"getCategoryIndex",boolean.class,String.class,new XC_MethodHook(){
@@ -97,7 +97,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 Activity a=(Activity)p.thisObject;
                 currentActivity=new WeakReference<>(a);
                 a.getWindow().getDecorView().post(()->setupTopManageButton(a));
-                if(a.getIntent().getBooleanExtra(MANAGE,false)){a.getIntent().removeExtra(MANAGE);a.getWindow().getDecorView().post(()->CategoryUi.manage(a,store(a),()->refresh(a)));}
+                if(a.getIntent().getBooleanExtra(MANAGE,false)){a.getIntent().removeExtra(MANAGE);a.getWindow().getDecorView().post(()->CategoryUi.CategoriesManager(a,store(a),()->refresh(a)));}
             }
         });
         XposedHelpers.findAndHookMethod(Activity.class,"onNewIntent",Intent.class,new XC_MethodHook(){
@@ -105,7 +105,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 if(!activityType.isInstance(p.thisObject))return;
                 Intent intent=(Intent)p.args[0];if(!intent.getBooleanExtra(MANAGE,false))return;
                 intent.removeExtra(MANAGE);Activity a=(Activity)p.thisObject;a.setIntent(intent);
-                a.getWindow().getDecorView().post(()->CategoryUi.manage(a,store(a),()->refresh(a)));
+                a.getWindow().getDecorView().post(()->CategoryUi.CategoriesManager(a,store(a),()->refresh(a)));
             }
         });
         Class<?> helper=XposedHelpers.findClass(APP+"utils.menu.MoreMenusHelper",cl);
@@ -131,7 +131,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                     row.setOnClickListener(v->{
                         Object ref=XposedHelpers.getAdditionalInstanceField(helperObject,"picoPopup");
                         if(ref instanceof WeakReference){Object popup=((WeakReference<?>)ref).get();if(popup instanceof PopupWindow)((PopupWindow)popup).dismiss();}
-                        Activity a=activity(v.getContext());if(a!=null)CategoryUi.assign(a,store(a),pkg(app),(String)XposedHelpers.callMethod(app,"getName"),()->refresh(a));
+                        Activity a=activity(v.getContext());if(a!=null)CategoryUi.CategoryAssigner(a,store(a),pkg(app),(String)XposedHelpers.callMethod(app,"getName"),()->refresh(a));
                     });
                 }else if(HIDE.equals(key)){
                     Categories data=store(c);String appPkg=pkg(app);boolean isHidden=data.isHidden(appPkg);
@@ -165,7 +165,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 TextView row=(TextView)XposedHelpers.newInstance(tvClass,c);
                 row.setText("Categories…");row.setTextColor(android.graphics.Color.WHITE);row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setPadding(padding,0,0,0);row.setTextSize(0,c.getResources().getDimension(size));row.setBackgroundResource(background);
-                row.setOnClickListener(v->{PopupWindow popup=u.popup.get();if(popup!=null)popup.dismiss();Activity a=activity(c);if(a!=null)CategoryUi.assign(a,store(a),pkg(u.app),(String)XposedHelpers.callMethod(u.app,"getName"),()->refresh(a));});
+                row.setOnClickListener(v->{PopupWindow popup=u.popup.get();if(popup!=null)popup.dismiss();Activity a=activity(c);if(a!=null)CategoryUi.CategoryAssigner(a,store(a),pkg(u.app),(String)XposedHelpers.callMethod(u.app,"getName"),()->refresh(a));});
                 View existing=list.getChildCount()>0?list.getChildAt(0):null;
                 LinearLayout.LayoutParams params=existing==null?new LinearLayout.LayoutParams(-1,64):new LinearLayout.LayoutParams(existing.getLayoutParams());
                 list.addView(row,params);
@@ -293,7 +293,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         btn.setOnClickListener(v->{
             Activity act=activity(v.getContext());
             if(act!=null){
-                CategoryUi.manage(act,store(act),()->refresh(act));
+                CategoryUi.CategoriesManager(act,store(act),()->refresh(act));
             }
         });
 
