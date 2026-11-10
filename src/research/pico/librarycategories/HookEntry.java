@@ -2,6 +2,8 @@ package research.pico.librarycategories;
 
 import android.app.Activity;
 import android.content.*;
+import android.graphics.Outline;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.util.SparseArray;
 import android.view.*;
@@ -94,6 +96,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){
                 Activity a=(Activity)p.thisObject;
                 currentActivity=new WeakReference<>(a);
+                a.getWindow().getDecorView().post(()->setupTopManageButton(a));
                 if(a.getIntent().getBooleanExtra(MANAGE,false)){a.getIntent().removeExtra(MANAGE);a.getWindow().getDecorView().post(()->CategoryUi.manage(a,store(a),()->refresh(a)));}
             }
         });
@@ -181,6 +184,121 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){UnknownMenu u=unknown.get();if(u!=null&&p.getResult() instanceof PopupWindow)u.popup.set((PopupWindow)p.getResult());}
         });
         XposedBridge.log("PICO Categories: Library hooks installed");
+    }
+    private void setupTopManageButton(Activity a){
+        if(a==null||a.isFinishing())return;
+        View decor=a.getWindow().getDecorView();
+        int filterId=a.getResources().getIdentifier("mAppFilter","id","com.pvr.appmanager");
+        View appFilter=filterId!=0?decor.findViewById(filterId):null;
+        if(appFilter==null){
+            decor.postDelayed(()->setupTopManageButton(a),200);
+            return;
+        }
+        if(!(appFilter.getParent() instanceof ViewGroup))return;
+        ViewGroup container=(ViewGroup)appFilter.getParent();
+        if(container.findViewWithTag("pico_manage_top_btn")!=null)return;
+
+        int styleId=a.getResources().getIdentifier("mMenuStyle","id","com.pvr.appmanager");
+        View menuStyle=styleId!=0?decor.findViewById(styleId):null;
+        View referenceView=menuStyle!=null?menuStyle:appFilter;
+
+        View btn;
+        try{
+            Class<?> osuiClass=XposedHelpers.findClass("com.bytedance.osui.common.OSUIImageButton",targetLoader);
+            btn=(View)XposedHelpers.newInstance(osuiClass,a);
+        }catch(Throwable fallback){
+            btn=new ImageView(a);
+        }
+        btn.setTag("pico_manage_top_btn");
+        btn.setFocusable(true);
+        btn.setClickable(true);
+
+        int radiusPx=(int)(8*a.getResources().getDisplayMetrics().density);
+        try{
+            int r=(Integer)XposedHelpers.callMethod(referenceView,"getRadius");
+            if(r>0)radiusPx=r;
+        }catch(Throwable ignored){}
+
+        try{
+            XposedHelpers.callMethod(btn,"setRadius",radiusPx);
+        }catch(Throwable ignored){}
+
+        final float finalRadius=radiusPx;
+        btn.setOutlineProvider(new ViewOutlineProvider(){
+            @Override public void getOutline(View view,Outline outline){
+                outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),finalRadius);
+            }
+        });
+        btn.setClipToOutline(true);
+
+        if(btn instanceof ImageView){
+            ImageView iv=(ImageView)btn;
+            boolean loaded=false;
+            try{
+                Context moduleContext=a.createPackageContext("research.pico.librarycategories",Context.CONTEXT_IGNORE_SECURITY);
+                int iconId=moduleContext.getResources().getIdentifier("ic_svg_menu_manage","drawable","research.pico.librarycategories");
+                if(iconId!=0){
+                    Drawable d=moduleContext.getDrawable(iconId);
+                    if(d!=null){
+                        iv.setImageDrawable(d);
+                        iv.clearColorFilter();
+                        loaded=true;
+                    }
+                }
+            }catch(Throwable t){
+                XposedBridge.log("PICO Categories: module context drawable failed "+t);
+            }
+            if(!loaded){
+                iv.setImageDrawable(a.getDrawable(android.R.drawable.ic_menu_manage));
+                iv.setColorFilter(0xFFDCDCDC);
+            }
+            iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        }
+
+        if(referenceView.getBackground()!=null){
+            try{
+                btn.setBackground(referenceView.getBackground().getConstantState().newDrawable().mutate());
+            }catch(Throwable ignored){
+                btn.setBackground(referenceView.getBackground());
+            }
+        }
+        if(referenceView.getForeground()!=null){
+            try{
+                btn.setForeground(referenceView.getForeground().getConstantState().newDrawable().mutate());
+            }catch(Throwable ignored){
+                btn.setForeground(referenceView.getForeground());
+            }
+        }
+
+        btn.setPadding(referenceView.getPaddingLeft(),referenceView.getPaddingTop(),referenceView.getPaddingRight(),referenceView.getPaddingBottom());
+
+        ViewGroup.LayoutParams origLp=referenceView.getLayoutParams();
+        LinearLayout.LayoutParams lp;
+        if(origLp instanceof LinearLayout.LayoutParams){
+            LinearLayout.LayoutParams old=(LinearLayout.LayoutParams)origLp;
+            lp=new LinearLayout.LayoutParams(old.width,old.height);
+            lp.leftMargin=old.leftMargin;
+            lp.rightMargin=old.rightMargin;
+            lp.topMargin=old.topMargin;
+            lp.bottomMargin=old.bottomMargin;
+            lp.gravity=old.gravity;
+        }else{
+            int dp48=(int)(48*a.getResources().getDisplayMetrics().density);
+            int dp40=(int)(40*a.getResources().getDisplayMetrics().density);
+            lp=new LinearLayout.LayoutParams(dp48,dp40);
+            int margin=(int)(8*a.getResources().getDisplayMetrics().density);
+            lp.rightMargin=margin;
+        }
+
+        btn.setOnClickListener(v->{
+            Activity act=activity(v.getContext());
+            if(act!=null){
+                CategoryUi.manage(act,store(act),()->refresh(act));
+            }
+        });
+
+        int index=container.indexOfChild(appFilter);
+        container.addView(btn,Math.max(0,index),lp);
     }
     private void makeScrollable(ViewGroup nav){
         if(nav.getParent() instanceof ScrollView||!(nav.getParent() instanceof ViewGroup))return;
@@ -292,6 +410,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
     }
     private void refresh(Activity a){
         try{
+            a.getWindow().getDecorView().post(()->setupTopManageButton(a));
             Navigation current=navigation(a);
             if(current!=null){
                 List<String> expected=new ArrayList<>();for(Categories.Category c:categories.items)if(!c.hidden&&(c.custom()||current.stock.containsKey(c.id)))expected.add(c.id+"/"+c.name);
@@ -310,7 +429,6 @@ public final class HookEntry implements IXposedHookLoadPackage {
             ((TextView)XposedHelpers.callMethod(row,"getTextView")).setText(c.name);next.add(row);
         }
         if(next.isEmpty()){View all=n.stock.get("all");if(all!=null)next.add(all);}
-        View manage=(View)XposedHelpers.callMethod(n.view,"n",context.getDrawable(android.R.drawable.ic_menu_manage),"Manage categories…");manage.setTag(MANAGE);next.add(manage);
         // Keep header/search children, but update BOTH the visual and selection-index model.
         for(View old:n.visible)n.view.removeView(old);
         SparseArray<Object> items=(SparseArray<Object>)XposedHelpers.getObjectField(n.section,"d");items.clear();
