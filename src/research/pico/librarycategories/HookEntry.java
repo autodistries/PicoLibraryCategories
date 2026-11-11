@@ -205,13 +205,17 @@ public final class HookEntry implements IXposedHookLoadPackage {
         View btn;
         try{
             Class<?> osuiClass=XposedHelpers.findClass("com.bytedance.osui.common.OSUIImageButton",targetLoader);
-            btn=(View)XposedHelpers.newInstance(osuiClass,a);
+            btn=(View)XposedHelpers.newInstance(osuiClass,a,null);
         }catch(Throwable fallback){
             btn=new ImageView(a);
         }
         btn.setTag("pico_manage_top_btn");
         btn.setFocusable(true);
         btn.setClickable(true);
+        try{
+            XposedHelpers.callMethod(btn,"setVibrateEnabled",true);
+            XposedHelpers.callMethod(btn,"setSoundEffectEnabled",true);
+        }catch(Throwable ignored){}
 
         int radiusPx=(int)(8*a.getResources().getDisplayMetrics().density);
         try{
@@ -290,7 +294,19 @@ public final class HookEntry implements IXposedHookLoadPackage {
             lp.rightMargin=margin;
         }
 
+        btn.setOnHoverListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_HOVER_ENTER) {
+                try {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                } catch (Throwable ignored) {}
+            }
+            return false;
+        });
+
         btn.setOnClickListener(v->{
+            try{
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            }catch(Throwable ignored){}
             Activity act=activity(v.getContext());
             if(act!=null){
                 CategoryUi.CategoriesManager(act,store(act),()->refresh(act));

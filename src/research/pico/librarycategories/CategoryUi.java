@@ -12,10 +12,113 @@ import de.robv.android.xposed.*;
 
 final class CategoryUi {
     private static int managerWidth = 0;
+ 
+    private static void triggerHaptic(View view, MotionEvent event, boolean isHover) {
+        if (view == null) return;
+        Context context = view.getContext();
+        if (context == null) return;
+        ClassLoader cl = context.getClassLoader();
+        if (cl == null) cl = CategoryUi.class.getClassLoader();
+
+        int effectType = isHover ? 0 : 1;
+        float freq = isHover ? 177f : 204f;
+        float amp = isHover ? 33f : 80f;
+        float dur = isHover ? 5f : 10f;
+
+        int devId = (event != null) ? event.getDeviceId() : 0;
+        int osuiDeviceId;
+        int nativeDeviceId;
+
+        if (devId == 100001 || devId == 1) {
+            osuiDeviceId = 100001;
+            nativeDeviceId = 1;
+        } else if (devId == 100002 || devId == 2) {
+            osuiDeviceId = 100002;
+            nativeDeviceId = 2;
+        } else if (devId > 0) {
+            osuiDeviceId = devId;
+            nativeDeviceId = (devId == 100001) ? 1 : 2;
+        } else {
+            osuiDeviceId = 100002;
+            nativeDeviceId = 2;
+        }
+
+        boolean success = false;
+        try {
+            Class<?> effectClass = cl.loadClass("c.a.h.n.b");
+            try {
+                java.lang.reflect.Method xMethod = effectClass.getMethod("x", Context.class);
+                xMethod.invoke(null, context);
+            } catch (Throwable ignored) {}
+            java.lang.reflect.Method pMethod = effectClass.getMethod("p", Context.class, int.class, int.class);
+            pMethod.invoke(null, context, effectType, osuiDeviceId);
+            success = true;
+        } catch (Throwable ignored) {}
+
+        if (!success) {
+            try {
+                Class<?> helperClass = cl.loadClass("com.bytedance.osui.utils.OSUIHelper");
+                java.lang.reflect.Method aMethod = helperClass.getMethod("a", int.class, float.class, float.class, float.class);
+                aMethod.invoke(null, nativeDeviceId, freq, amp, dur);
+                success = true;
+            } catch (Throwable ignored) {}
+        }
+
+        if (!success) {
+            try {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private static void triggerHaptic(View view, boolean isHover) {
+        triggerHaptic(view, null, isHover);
+    }
+
+    private static void applyHaptic(View view) {
+        if (view == null) return;
+        view.setOnHoverListener((v, event) -> {
+            int action = event.getAction();
+            if (action == MotionEvent.ACTION_HOVER_ENTER) {
+                v.setHovered(true);
+                triggerHaptic(v, event, true);
+            } else if (action == MotionEvent.ACTION_HOVER_EXIT) {
+                v.setHovered(false);
+            }
+            return false;
+        });
+    }
+
+    private static void setClickWithHaptic(View view, View.OnClickListener listener) {
+        if (view == null) return;
+        final MotionEvent[] lastEvent = new MotionEvent[1];
+        view.setOnHoverListener((v, event) -> {
+            int action = event.getAction();
+            if (action == MotionEvent.ACTION_HOVER_ENTER) {
+                v.setHovered(true);
+                triggerHaptic(v, event, true);
+            } else if (action == MotionEvent.ACTION_HOVER_EXIT) {
+                v.setHovered(false);
+            }
+            lastEvent[0] = event;
+            return false;
+        });
+        view.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                lastEvent[0] = event;
+            }
+            return false;
+        });
+        view.setOnClickListener(v -> {
+            triggerHaptic(v, lastEvent[0], false);
+            if (listener != null) listener.onClick(v);
+        });
+    }
+
     private static int dialogWidth(Context c) {
         return managerWidth > 0 ? managerWidth : (int) (540 * c.getResources().getDisplayMetrics().density);
     }
-    private static void showCustomDialog(Activity a, View dialogBox, int fixedWidth) {
+    private static AlertDialog showCustomDialog(Activity a, View dialogBox, int fixedWidth) {
         if (managerWidth <= 0 && dialogBox.getWidth() > 0) {
             managerWidth = dialogBox.getWidth();
         }
@@ -35,6 +138,7 @@ final class CategoryUi {
             dialog.getWindow().setGravity(Gravity.CENTER);
         }
         dialog.show();
+        return dialog;
     }
     private static Drawable createScrollThumb(Context c) {
         float density = c.getResources().getDisplayMetrics().density;
@@ -63,6 +167,7 @@ final class CategoryUi {
         normal.setCornerRadius(r);
         sld.addState(new int[]{android.R.attr.state_pressed}, pressed);
         sld.addState(new int[]{android.R.attr.state_focused}, pressed);
+        sld.addState(new int[]{android.R.attr.state_hovered}, pressed);
         sld.addState(new int[]{}, normal);
         return sld;
     }
@@ -227,6 +332,18 @@ final class CategoryUi {
         edit.setTextSize(16);
         edit.setBackground(roundRect(0xFF2C2C2E, 10f, a));
         edit.setPadding(dp16, dp12, dp16, dp12);
+        applyHaptic(edit);
+        edit.setOnClickListener(v -> triggerHaptic(v, false));
+        edit.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) triggerHaptic(v, false);
+        });
+        edit.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                triggerHaptic(edit, true);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
         container.addView(edit);
 
         LinearLayout footer = new LinearLayout(a);
@@ -246,7 +363,7 @@ final class CategoryUi {
         neg.setGravity(Gravity.CENTER);
         neg.setTextColor(0xFFDCDCDC);
         neg.setBackground(buttonDrawable(0xFF3A3A3C, 0xFF48484A, 10f, a));
-        neg.setOnClickListener(button -> d.dismiss());
+        setClickWithHaptic(neg, button -> d.dismiss());
 
         Button pos = new Button(a);
         pos.setText("Save");
@@ -256,7 +373,7 @@ final class CategoryUi {
         pos.setGravity(Gravity.CENTER);
         pos.setTextColor(0xFFFFFFFF);
         pos.setBackground(buttonDrawable(0x773e8bff, 0x773e8bff, 10f, a));
-        pos.setOnClickListener(button -> {
+        setClickWithHaptic(pos, button -> {
             String value = edit.getText().toString().trim();
             if (value.isEmpty() || value.length() > 40) {
                 edit.setError("Use 1–40 characters");
@@ -322,7 +439,7 @@ final class CategoryUi {
         neg.setGravity(Gravity.CENTER);
         neg.setTextColor(0xFFDCDCDC);
         neg.setBackground(buttonDrawable(0xFF3A3A3C, 0xFF48484A, 10f, a));
-        neg.setOnClickListener(button -> d.dismiss());
+        setClickWithHaptic(neg, button -> d.dismiss());
 
         Button pos = new Button(a);
         pos.setText("Delete");
@@ -332,7 +449,7 @@ final class CategoryUi {
         pos.setGravity(Gravity.CENTER);
         pos.setTextColor(0xFFDCDCDC);
         pos.setBackground(buttonDrawable(0xFFf2453f, 0xFFf2453f, 10f, a));
-        pos.setOnClickListener(button -> {
+        setClickWithHaptic(pos, button -> {
             d.dismiss();
             onConfirm.run();
         });
@@ -478,7 +595,7 @@ final class CategoryUi {
                 minusLp.rightMargin = dp8;
                 topRow.addView(minusBtn, minusLp);
 
-                minusBtn.setOnClickListener(v -> {
+                setClickWithHaptic(minusBtn, v -> {
                     ConfirmDialog(a, "Delete " + c.name + "?", "Apps stay installed. Only this category is removed.", () -> {
                         data.items.remove(c);
                         save(a, data, changed);
@@ -497,7 +614,9 @@ final class CategoryUi {
             hideSwitch.setChecked(!c.hidden); // Checked = shown, Unchecked = hidden
             hideSwitch.setPadding(dp8, 0, dp8, 0);
             tintSwitch(hideSwitch, 0x773e8bff, 0xFF48484A);
+            applyHaptic(hideSwitch);
             hideSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                triggerHaptic(buttonView, false);
                 c.hidden = !isChecked; // isChecked=true -> c.hidden=false, isChecked=false -> c.hidden=true
                 save(a, data, changed);
                 if (dialogRef[0] != null) dialogRef[0].dismiss();
@@ -515,6 +634,7 @@ final class CategoryUi {
             handle.setGravity(Gravity.CENTER);
             handle.setPadding(dp10, 0, dp10, 0);
             handle.setClickable(true);
+            applyHaptic(handle);
             topRow.addView(handle);
 
             card.addView(topRow);
@@ -561,7 +681,7 @@ final class CategoryUi {
         View plusBtn = createCircleIconButton(a, "+", 0xFF8cd200, 28);
         plusBtn.setFocusable(true);
         plusBtn.setClickable(true);
-        plusBtn.setOnClickListener(v -> {
+        setClickWithHaptic(plusBtn, v -> {
             if (dialogRef[0] != null) dialogRef[0].dismiss();
             RenameDialog(a, "New category", "", value -> {
                 data.create(value);
@@ -634,7 +754,7 @@ final class CategoryUi {
         lp.leftMargin = dp4;
 
         row.addView(b, lp);
-        b.setOnClickListener(v -> action.run());
+        setClickWithHaptic(b, v -> action.run());
     }
 
     static void CategoryAssigner(Activity a, Categories data, String pkg, String label, Runnable changed) {
@@ -689,6 +809,7 @@ final class CategoryUi {
             checkBox.setChecked(selected[idx]);
             checkBox.setClickable(false);
             tintCheckBox(checkBox, 0x773e8bff);
+            applyHaptic(checkBox);
             row.addView(checkBox);
 
             TextView nameTv = new TextView(a);
@@ -703,7 +824,7 @@ final class CategoryUi {
 
             row.setFocusable(true);
             row.setClickable(true);
-            row.setOnClickListener(v -> {
+            setClickWithHaptic(row, v -> {
                 selected[idx] = !selected[idx];
                 checkBox.setChecked(selected[idx]);
             });
@@ -760,7 +881,17 @@ final class CategoryUi {
         footer.addView(pos, new LinearLayout.LayoutParams(0, btnHeight, 1f));
 
         dialogBox.addView(footer);
-        showCustomDialog(a, dialogBox, fixedWidth);
+        AlertDialog d = showCustomDialog(a, dialogBox, fixedWidth);
+        setClickWithHaptic(neg, v -> d.dismiss());
+        setClickWithHaptic(pos, v -> {
+            for (int i = 0; i < list.size(); i++) {
+                Categories.Category cat = list.get(i);
+                if (selected[i]) cat.members.add(pkg);
+                else cat.members.remove(pkg);
+            }
+            save(a, data, changed);
+            d.dismiss();
+        });
     }
 
     private static void AppsPicker(Activity a, Categories data, Categories.Category category, Runnable changed) {
@@ -824,6 +955,7 @@ final class CategoryUi {
                 checkBox.setChecked(checked[idx]);
                 checkBox.setClickable(false);
                 tintCheckBox(checkBox, 0x773e8bff);
+                applyHaptic(checkBox);
                 row.addView(checkBox);
 
                 LinearLayout textCol = new LinearLayout(a);
@@ -850,7 +982,7 @@ final class CategoryUi {
 
                 row.setFocusable(true);
                 row.setClickable(true);
-                row.setOnClickListener(v -> {
+                setClickWithHaptic(row, v -> {
                     checked[idx] = !checked[idx];
                     checkBox.setChecked(checked[idx]);
                 });
@@ -907,7 +1039,16 @@ final class CategoryUi {
             footer.addView(pos, new LinearLayout.LayoutParams(0, btnHeight, 1f));
 
             dialogBox.addView(footer);
-            showCustomDialog(a, dialogBox, fixedWidth);
+            AlertDialog d = showCustomDialog(a, dialogBox, fixedWidth);
+            setClickWithHaptic(neg, v -> d.dismiss());
+            setClickWithHaptic(pos, v -> {
+                category.members.clear();
+                for (int i = 0; i < packages.size(); i++) {
+                    if (checked[i]) category.members.add(packages.get(i));
+                }
+                save(a, data, changed);
+                d.dismiss();
+            });
 
         } catch (Throwable failure) {
             XposedBridge.log("PICO Categories: app picker unavailable " + failure);
