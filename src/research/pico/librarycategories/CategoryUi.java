@@ -156,6 +156,22 @@ final class CategoryUi {
         return d;
     }
 
+    private static StateListDrawable hoverableRect(int normalColor, int hoverColor, float radiusDp, Context c) {
+        StateListDrawable sld = new StateListDrawable();
+        float r = radiusDp * c.getResources().getDisplayMetrics().density;
+        GradientDrawable hover = new GradientDrawable();
+        hover.setColor(hoverColor);
+        hover.setCornerRadius(r);
+        GradientDrawable normal = new GradientDrawable();
+        normal.setColor(normalColor);
+        normal.setCornerRadius(r);
+        sld.addState(new int[]{android.R.attr.state_pressed}, hover);
+        sld.addState(new int[]{android.R.attr.state_focused}, hover);
+        sld.addState(new int[]{android.R.attr.state_hovered}, hover);
+        sld.addState(new int[]{}, normal);
+        return sld;
+    }
+
     private static StateListDrawable buttonDrawable(int normalColor, int pressedColor, float radiusDp, Context c) {
         StateListDrawable sld = new StateListDrawable();
         float r = radiusDp * c.getResources().getDisplayMetrics().density;
@@ -176,9 +192,20 @@ final class CategoryUi {
         float density = c.getResources().getDisplayMetrics().density;
         int sizePx = (int) (sizeDp * density);
 
-        GradientDrawable shape = new GradientDrawable();
-        shape.setShape(GradientDrawable.OVAL);
-        shape.setColor(bgColor);
+        GradientDrawable normal = new GradientDrawable();
+        normal.setShape(GradientDrawable.OVAL);
+        normal.setColor(bgColor);
+
+        GradientDrawable hover = new GradientDrawable();
+        hover.setShape(GradientDrawable.OVAL);
+        int hoverColor = (bgColor == 0xFFfe645c) ? 0xFFff857e : ((bgColor == 0xFF8cd200) ? 0xFFa2e61a : 0xFF58585A);
+        hover.setColor(hoverColor);
+
+        StateListDrawable sld = new StateListDrawable();
+        sld.addState(new int[]{android.R.attr.state_pressed}, hover);
+        sld.addState(new int[]{android.R.attr.state_focused}, hover);
+        sld.addState(new int[]{android.R.attr.state_hovered}, hover);
+        sld.addState(new int[]{}, normal);
 
         TextView tv = new TextView(c);
         tv.setText(symbol);
@@ -186,7 +213,7 @@ final class CategoryUi {
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx * 0.68f);
         tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
-        tv.setBackground(shape);
+        tv.setBackground(sld);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(sizePx, sizePx);
         tv.setLayoutParams(lp);
@@ -372,7 +399,7 @@ final class CategoryUi {
         pos.setAllCaps(false);
         pos.setGravity(Gravity.CENTER);
         pos.setTextColor(0xFFFFFFFF);
-        pos.setBackground(buttonDrawable(0x773e8bff, 0x773e8bff, 10f, a));
+        pos.setBackground(buttonDrawable(0x773e8bff, 0x553e8bff, 10f, a));
         setClickWithHaptic(pos, button -> {
             String value = edit.getText().toString().trim();
             if (value.isEmpty() || value.length() > 40) {
@@ -448,7 +475,7 @@ final class CategoryUi {
         pos.setAllCaps(false);
         pos.setGravity(Gravity.CENTER);
         pos.setTextColor(0xFFDCDCDC);
-        pos.setBackground(buttonDrawable(0xFFf2453f, 0xFFf2453f, 10f, a));
+        pos.setBackground(buttonDrawable(0xFFf2453f, 0x55f2453f, 10f, a));
         setClickWithHaptic(pos, button -> {
             d.dismiss();
             onConfirm.run();
@@ -634,6 +661,7 @@ final class CategoryUi {
             handle.setGravity(Gravity.CENTER);
             handle.setPadding(dp10, 0, dp10, 0);
             handle.setClickable(true);
+            handle.setBackground(buttonDrawable(0xFF292c2b, 0xFF373a39, 10f, a));
             applyHaptic(handle);
             topRow.addView(handle);
 
@@ -798,7 +826,7 @@ final class CategoryUi {
             LinearLayout row = new LinearLayout(a);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackground(roundRect(0xFF2C2C2E, 12f, a));
+            row.setBackground(hoverableRect(0xFF2C2C2E, 0xFF3A3A3C, 12f, a));
             row.setPadding(dp16, dp12, dp16, dp12);
 
             LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
@@ -872,7 +900,7 @@ final class CategoryUi {
         pos.setAllCaps(false);
         pos.setGravity(Gravity.CENTER);
         pos.setTextColor(0xFFFFFFFF);
-        pos.setBackground(buttonDrawable(0x773e8bff, 0x773e8bff, 10f, a));
+        pos.setBackground(buttonDrawable(0x773e8bff, 0x553e8bff, 10f, a));
 
         int btnHeight = (int) (42 * density);
         footer.addView(neg, new LinearLayout.LayoutParams(0, btnHeight, 1f));
@@ -944,7 +972,7 @@ final class CategoryUi {
                 LinearLayout row = new LinearLayout(a);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setBackground(roundRect(0xFF2C2C2E, 12f, a));
+                row.setBackground(hoverableRect(0xFF2C2C2E, 0xFF3A3A3C, 12f, a));
                 row.setPadding(dp16, dp12, dp16, dp12);
 
                 LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
@@ -1030,7 +1058,7 @@ final class CategoryUi {
             pos.setAllCaps(false);
             pos.setGravity(Gravity.CENTER);
             pos.setTextColor(0xFFFFFFFF);
-            pos.setBackground(buttonDrawable(0x773e8bff, 0x773e8bff, 10f, a));
+            pos.setBackground(buttonDrawable(0x773e8bff, 0x553e8bff, 10f, a));
 
             int btnHeight = (int) (42 * density);
             footer.addView(neg, new LinearLayout.LayoutParams(0, btnHeight, 1f));
