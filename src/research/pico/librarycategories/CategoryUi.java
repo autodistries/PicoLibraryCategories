@@ -788,7 +788,11 @@ final class CategoryUi {
     static void CategoryAssigner(Activity a, Categories data, String pkg, String label, Runnable changed) {
         List<Categories.Category> list = new ArrayList<>();
         for (Categories.Category c : data.items) {
-            if (c.custom() && !c.id.equals(CategoryModel.HIDDEN_ID)) list.add(c);
+            if (c.id.equals(CategoryModel.HIDDEN_ID)) continue;
+            if ("all".equalsIgnoreCase(c.id)) continue;
+            if ("update".equalsIgnoreCase(c.id)) continue;
+            if ("not_installed".equalsIgnoreCase(c.id)) continue;
+            list.add(c);
         }
         int fixedWidth = dialogWidth(a);
         float density = a.getResources().getDisplayMetrics().density;
@@ -812,7 +816,32 @@ final class CategoryUi {
 
         boolean[] selected = new boolean[list.size()];
         for (int i = 0; i < list.size(); i++) {
-            selected[i] = list.get(i).members.contains(pkg);
+            Categories.Category cat = list.get(i);
+            boolean isMember = cat.members.contains(pkg);
+            if (!isMember && !cat.exclusions.contains(pkg) && !cat.custom()) {
+                try {
+                    Object filter = XposedHelpers.callMethod(a, "getMFilter");
+                    Object targetFilter = XposedHelpers.callMethod(filter, "getTargetFilter", cat.id);
+                    if (targetFilter == null && ("app".equalsIgnoreCase(cat.id) || "apps".equalsIgnoreCase(cat.id))) {
+                        targetFilter = XposedHelpers.callMethod(filter, "getTargetFilter", "app");
+                    }
+                    if (targetFilter == null && ("game".equalsIgnoreCase(cat.id) || "entertainment".equalsIgnoreCase(cat.id))) {
+                        targetFilter = XposedHelpers.callMethod(filter, "getTargetFilter", "game");
+                    }
+                    if (targetFilter != null) {
+                        List<?> masterApps = (List<?>) XposedHelpers.callMethod(a, "getMAllApp");
+                        if (masterApps != null) {
+                            for (Object app : masterApps) {
+                                if (pkg.equals(HookEntry.pkg(app))) {
+                                    isMember = (Boolean) XposedHelpers.callMethod(targetFilter, "c", app);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+            selected[i] = isMember;
         }
 
         LinearLayout box = new LinearLayout(a);
@@ -839,6 +868,33 @@ final class CategoryUi {
             tintCheckBox(checkBox, 0x773e8bff);
             applyHaptic(checkBox);
             row.addView(checkBox);
+
+            ImageView categoryIcon = new ImageView(a);
+            Drawable iconDrawable = null;
+            if (cat.custom()) {
+                iconDrawable = a.getDrawable(android.R.drawable.ic_menu_agenda);
+            } else {
+                int stockIconRes = 0;
+                if ("all".equals(cat.id)) stockIconRes = a.getResources().getIdentifier("ic_icon_navi_all", "drawable", "com.pvr.appmanager");
+                else if ("app".equals(cat.id) || "apps".equals(cat.id)) stockIconRes = a.getResources().getIdentifier("ic_icon_navi_application", "drawable", "com.pvr.appmanager");
+                else if ("game".equals(cat.id) || "entertainment".equals(cat.id)) stockIconRes = a.getResources().getIdentifier("ic_icon_navi_game", "drawable", "com.pvr.appmanager");
+                else if ("update".equals(cat.id)) stockIconRes = a.getResources().getIdentifier("ic_icon_navi_update", "drawable", "com.pvr.appmanager");
+
+                if (stockIconRes != 0) {
+                    try { iconDrawable = a.getDrawable(stockIconRes); } catch (Throwable ignored) {}
+                }
+            }
+            if (iconDrawable == null) {
+                iconDrawable = a.getDrawable(android.R.drawable.ic_menu_agenda);
+            }
+
+            categoryIcon.setImageDrawable(iconDrawable);
+            categoryIcon.setColorFilter(cat.hidden ? 0xFFA6A6A6 : 0xFFFFFFFF);
+            int iconSize = (int) (20 * density);
+            LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
+            iconLp.leftMargin = dp12;
+            categoryIcon.setLayoutParams(iconLp);
+            row.addView(categoryIcon);
 
             TextView nameTv = new TextView(a);
             nameTv.setText(cat.name + (cat.hidden ? " (Hidden)" : ""));
@@ -878,47 +934,23 @@ final class CategoryUi {
         scroll.setVerticalScrollbarThumbDrawable(createScrollThumb(a));
         scroll.addView(box);
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT);
-        scrollLp.bottomMargin = dp12;
         dialogBox.addView(scroll, scrollLp);
 
-        // Footer buttons
-        LinearLayout footer = new LinearLayout(a);
-        footer.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button neg = new Button(a);
-        neg.setText("Cancel");
-        neg.setTextSize(15);
-        neg.setAllCaps(false);
-        neg.setGravity(Gravity.CENTER);
-        neg.setTextColor(0xFFDCDCDC);
-        neg.setBackground(buttonDrawable(0xFF3A3A3C, 0xFF48484A, 10f, a));
-
-        Button pos = new Button(a);
-        pos.setText("Save");
-        pos.setTextSize(15);
-        pos.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        pos.setAllCaps(false);
-        pos.setGravity(Gravity.CENTER);
-        pos.setTextColor(0xFFFFFFFF);
-        pos.setBackground(buttonDrawable(0x773e8bff, 0x553e8bff, 10f, a));
-
-        int btnHeight = (int) (42 * density);
-        footer.addView(neg, new LinearLayout.LayoutParams(0, btnHeight, 1f));
-        Space space = new Space(a);
-        footer.addView(space, new LinearLayout.LayoutParams(dp12, -1));
-        footer.addView(pos, new LinearLayout.LayoutParams(0, btnHeight, 1f));
-
-        dialogBox.addView(footer);
         AlertDialog d = showCustomDialog(a, dialogBox, fixedWidth);
-        setClickWithHaptic(neg, v -> d.dismiss());
-        setClickWithHaptic(pos, v -> {
+        d.setOnDismissListener(dialogInterface -> {
             for (int i = 0; i < list.size(); i++) {
                 Categories.Category cat = list.get(i);
-                if (selected[i]) cat.members.add(pkg);
-                else cat.members.remove(pkg);
+                if (selected[i]) {
+                    cat.members.add(pkg);
+                    cat.exclusions.remove(pkg);
+                } else {
+                    cat.members.remove(pkg);
+                    if (!cat.custom()) {
+                        cat.exclusions.add(pkg);
+                    }
+                }
             }
             save(a, data, changed);
-            d.dismiss();
         });
     }
 

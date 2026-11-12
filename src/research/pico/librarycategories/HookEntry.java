@@ -355,8 +355,10 @@ public final class HookEntry implements IXposedHookLoadPackage {
         if(original==null||Proxy.isProxyClass(original.getClass()))return original;
         Class<?> type=XposedHelpers.findClass(APP+"Filter$a",targetLoader);
         return Proxy.newProxyInstance(targetLoader,new Class<?>[]{type},(proxy,method,args)->{
+            String tag=(String)XposedHelpers.callMethod(original,"a");
+            Categories.Category cat=categories!=null?categories.find(tag):null;
             switch(method.getName()){
-                case "a":return XposedHelpers.callMethod(original,"a");
+                case "a":return tag;
                 case "b":{
                     @SuppressWarnings("unchecked")
                     List<Object> list=(List<Object>)XposedHelpers.callMethod(original,"b",args[0]);
@@ -368,15 +370,31 @@ public final class HookEntry implements IXposedHookLoadPackage {
                             if(selected!=null&&selected.startsWith(Categories.PREFIX))return list;
                         }catch(Throwable ignored){}
                     }
+                    List<Object> result=new ArrayList<>(list);
+                    if(cat!=null&&!cat.members.isEmpty()&&a!=null){
+                        try{
+                            @SuppressWarnings("unchecked")
+                            List<Object> master=(List<Object>)XposedHelpers.callMethod(a,"getMAllApp");
+                            if(master!=null){
+                                for(Object app:master){
+                                    if(cat.members.contains(pkg(app))&&!result.contains(app)){
+                                        result.add(app);
+                                    }
+                                }
+                            }
+                        }catch(Throwable ignored){}
+                    }
+                    if(cat!=null&&!cat.exclusions.isEmpty()){
+                        result.removeIf(app->cat.exclusions.contains(pkg(app)));
+                    }
                     Set<String> hiddenApps=categories.getHiddenMembers();
-                    if(hiddenApps.isEmpty())return list;
-                    List<Object> filtered=new ArrayList<>();
-                    for(Object app:list)if(!hiddenApps.contains(pkg(app)))filtered.add(app);
-                    return filtered;
+                    if(!hiddenApps.isEmpty()){
+                        result.removeIf(app->hiddenApps.contains(pkg(app)));
+                    }
+                    return result;
                 }
                 case "c":{
                     boolean res=(Boolean)XposedHelpers.callMethod(original,"c",args[0]);
-                    if(!res||categories==null)return res;
                     Activity a=currentActivity!=null?currentActivity.get():null;
                     if(a!=null){
                         try{
@@ -384,7 +402,13 @@ public final class HookEntry implements IXposedHookLoadPackage {
                             if(selected!=null&&selected.startsWith(Categories.PREFIX))return res;
                         }catch(Throwable ignored){}
                     }
-                    return !categories.getHiddenMembers().contains(pkg(args[0]));
+                    String p=pkg(args[0]);
+                    if(cat!=null){
+                        if(cat.members.contains(p))res=true;
+                        if(cat.exclusions.contains(p))res=false;
+                    }
+                    if(categories!=null&&categories.getHiddenMembers().contains(p))res=false;
+                    return res;
                 }
                 case "toString":return "PicoStockFilterWrapper("+original+")";
                 case "hashCode":return System.identityHashCode(proxy);
