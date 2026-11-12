@@ -685,7 +685,12 @@ final class CategoryUi {
                 });
             });
 
-            if (c.custom()) {
+            boolean showAppsBtn = c.custom()
+                || "app".equalsIgnoreCase(c.id) || "apps".equalsIgnoreCase(c.id)
+                || "game".equalsIgnoreCase(c.id) || "entertainment".equalsIgnoreCase(c.id)
+                || "unknown".equalsIgnoreCase(c.id);
+
+            if (showAppsBtn) {
                 addStyledBtn(btnRow, "Apps…", 0xFF3A3A3C, 0xFF48484A, 0xFFFFFFFF, () -> {
                     if (dialogRef[0] != null) dialogRef[0].dismiss();
                     AppsPicker(a, data, c, changed);
@@ -967,8 +972,33 @@ final class CategoryUi {
             packages.sort(Comparator.comparing(p -> names.get(p), String.CASE_INSENSITIVE_ORDER));
 
             boolean[] checked = new boolean[packages.size()];
+            Object targetFilter = null;
+            if (!category.custom()) {
+                try {
+                    Object filter = XposedHelpers.callMethod(a, "getMFilter");
+                    targetFilter = XposedHelpers.callMethod(filter, "getTargetFilter", category.id);
+                    if (targetFilter == null && ("app".equalsIgnoreCase(category.id) || "apps".equalsIgnoreCase(category.id))) {
+                        targetFilter = XposedHelpers.callMethod(filter, "getTargetFilter", "app");
+                    }
+                    if (targetFilter == null && ("game".equalsIgnoreCase(category.id) || "entertainment".equalsIgnoreCase(category.id))) {
+                        targetFilter = XposedHelpers.callMethod(filter, "getTargetFilter", "game");
+                    }
+                } catch (Throwable ignored) {}
+            }
             for (int i = 0; i < packages.size(); i++) {
-                checked[i] = category.members.contains(packages.get(i));
+                String pkg = packages.get(i);
+                boolean isChecked = category.members.contains(pkg);
+                if (!isChecked && !category.exclusions.contains(pkg) && targetFilter != null) {
+                    try {
+                        for (Object app : apps) {
+                            if (pkg.equals(HookEntry.pkg(app))) {
+                                isChecked = (Boolean) XposedHelpers.callMethod(targetFilter, "c", app);
+                                break;
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                checked[i] = isChecked;
             }
 
             int fixedWidth = dialogWidth(a);
@@ -1092,8 +1122,16 @@ final class CategoryUi {
             AlertDialog d = showCustomDialog(a, dialogBox, fixedWidth);
             d.setOnDismissListener(dialogInterface -> {
                 category.members.clear();
+                category.exclusions.clear();
                 for (int i = 0; i < packages.size(); i++) {
-                    if (checked[i]) category.members.add(packages.get(i));
+                    String pkg = packages.get(i);
+                    if (checked[i]) {
+                        category.members.add(pkg);
+                    } else {
+                        if (!category.custom()) {
+                            category.exclusions.add(pkg);
+                        }
+                    }
                 }
                 save(a, data, changed);
                 CategoriesManager(a, data, changed);
