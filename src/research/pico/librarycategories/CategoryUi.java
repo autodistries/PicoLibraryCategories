@@ -986,6 +986,25 @@ final class CategoryUi {
                 applyHaptic(checkBox);
                 row.addView(checkBox);
 
+                ImageView appIcon = new ImageView(a);
+                Drawable iconDrawable = null;
+                try {
+                    iconDrawable = a.getPackageManager().getApplicationIcon(pkg);
+                } catch (Throwable ignored) {
+                    try {
+                        iconDrawable = a.getPackageManager().getDefaultActivityIcon();
+                    } catch (Throwable ignored2) {}
+                }
+                if (iconDrawable != null) {
+                    appIcon.setImageDrawable(iconDrawable);
+                }
+                int iconSize = (int) (32 * density);
+                LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
+                iconLp.leftMargin = dp12;
+                appIcon.setLayoutParams(iconLp);
+                appIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                row.addView(appIcon);
+
                 LinearLayout textCol = new LinearLayout(a);
                 textCol.setOrientation(LinearLayout.VERTICAL);
                 LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -1036,46 +1055,16 @@ final class CategoryUi {
             scroll.setVerticalScrollbarThumbDrawable(createScrollThumb(a));
             scroll.addView(box);
             LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT);
-            scrollLp.bottomMargin = dp12;
             dialogBox.addView(scroll, scrollLp);
 
-            // Footer buttons (Cancel, Save)
-            LinearLayout footer = new LinearLayout(a);
-            footer.setOrientation(LinearLayout.HORIZONTAL);
-
-            Button neg = new Button(a);
-            neg.setText("Cancel");
-            neg.setTextSize(15);
-            neg.setAllCaps(false);
-            neg.setGravity(Gravity.CENTER);
-            neg.setTextColor(0xFFDCDCDC);
-            neg.setBackground(buttonDrawable(0xFF3A3A3C, 0xFF48484A, 10f, a));
-
-            Button pos = new Button(a);
-            pos.setText("Save");
-            pos.setTextSize(15);
-            pos.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-            pos.setAllCaps(false);
-            pos.setGravity(Gravity.CENTER);
-            pos.setTextColor(0xFFFFFFFF);
-            pos.setBackground(buttonDrawable(0x773e8bff, 0x553e8bff, 10f, a));
-
-            int btnHeight = (int) (42 * density);
-            footer.addView(neg, new LinearLayout.LayoutParams(0, btnHeight, 1f));
-            Space space = new Space(a);
-            footer.addView(space, new LinearLayout.LayoutParams(dp12, -1));
-            footer.addView(pos, new LinearLayout.LayoutParams(0, btnHeight, 1f));
-
-            dialogBox.addView(footer);
             AlertDialog d = showCustomDialog(a, dialogBox, fixedWidth);
-            setClickWithHaptic(neg, v -> d.dismiss());
-            setClickWithHaptic(pos, v -> {
+            d.setOnDismissListener(dialogInterface -> {
                 category.members.clear();
                 for (int i = 0; i < packages.size(); i++) {
                     if (checked[i]) category.members.add(packages.get(i));
                 }
                 save(a, data, changed);
-                d.dismiss();
+                CategoriesManager(a, data, changed);
             });
 
         } catch (Throwable failure) {
