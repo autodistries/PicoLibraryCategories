@@ -113,8 +113,15 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){
                 if(p.hasThrowable()||!appData.isInstance(p.args[0])||p.getResult()==null)return;
                 List<Object> rows=new ArrayList<>((List<?>)p.getResult());
-                rows.add(XposedHelpers.newInstance(menu,MENU,android.R.string.untitled,android.graphics.Color.WHITE,p.args[0],p.args[1]));
-                rows.add(XposedHelpers.newInstance(menu,HIDE,android.R.string.untitled,android.graphics.Color.WHITE,p.args[0],p.args[1]));
+                Object m1=XposedHelpers.newInstance(menu,MENU,android.R.string.untitled,0xCCFFFFFF,p.args[0],p.args[1]);
+                Object m2=XposedHelpers.newInstance(menu,HIDE,android.R.string.untitled,0xCCFFFFFF,p.args[0],p.args[1]);
+                int insertPos=-1;
+                for(int i=0;i<rows.size();i++){
+                    String k=(String)XposedHelpers.callMethod(rows.get(i),"getKey");
+                    if("delete".equalsIgnoreCase(k)){insertPos=i;break;}
+                }
+                if(insertPos>=0){rows.add(insertPos,m1);rows.add(insertPos+1,m2);}
+                else{rows.add(m1);rows.add(m2);}
                 p.setResult(rows);
             }
         });
@@ -124,6 +131,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 Object menuBean=p.args[1];String key=(String)XposedHelpers.callMethod(menuBean,"getKey");
                 if(!MENU.equals(key)&&!HIDE.equals(key))return;
                 TextView row=(TextView)p.getResult();Object helperObject=p.thisObject;
+                row.setTextColor(0xCCFFFFFF);
                 Object app=XposedHelpers.callMethod(menuBean,"getAppData");
                 Context c=(Context)p.args[0];
                 if(MENU.equals(key)){
