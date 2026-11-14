@@ -475,7 +475,78 @@ final class CategoryUi {
         pos.setAllCaps(false);
         pos.setGravity(Gravity.CENTER);
         pos.setTextColor(0xFFDCDCDC);
-        pos.setBackground(buttonDrawable(0xFFf2453f, 0x55f2453f, 10f, a));
+        pos.setBackground(buttonDrawable(0xFFfe645c, 0x55fe645c, 10f, a));
+        setClickWithHaptic(pos, button -> {
+            d.dismiss();
+            onConfirm.run();
+        });
+
+        footer.addView(neg, new LinearLayout.LayoutParams(0, dp42, 1f));
+        Space space = new Space(a);
+        footer.addView(space, new LinearLayout.LayoutParams(dp12, -1));
+        footer.addView(pos, new LinearLayout.LayoutParams(0, dp42, 1f));
+
+        container.addView(footer);
+
+        if (d.getWindow() != null) {
+            d.getWindow().setBackgroundDrawable(roundRect(0xFF1F1F21, 20f, a));
+        }
+        d.show();
+    }
+
+    static void ForceStopConfirmDialog(Activity a, String appPkg, Runnable onConfirm) {
+        float density = a.getResources().getDisplayMetrics().density;
+        int dp16 = (int) (16 * density);
+        int dp12 = (int) (12 * density);
+        int dp42 = (int) (42 * density);
+
+        LinearLayout container = new LinearLayout(a);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp16, dp16, dp16, dp16);
+        container.setMinimumWidth((int) (400 * density));
+
+        TextView titleTv = new TextView(a);
+        titleTv.setText("Force Stop?");
+        titleTv.setTextColor(0xFFFFFFFF);
+        titleTv.setTextSize(18);
+        titleTv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        titleTv.setPadding(0, 0, 0, (int) (8 * density));
+        container.addView(titleTv);
+
+        TextView msgTv = new TextView(a);
+        msgTv.setText("Force stopping an app might lead to errors.");
+        msgTv.setTextColor(0xFFA6A6A6);
+        msgTv.setTextSize(14);
+        msgTv.setPadding(0, 0, 0, dp16);
+        container.addView(msgTv);
+
+        LinearLayout footer = new LinearLayout(a);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(-1, -2);
+        footerLp.topMargin = dp16;
+        footer.setLayoutParams(footerLp);
+
+        AlertDialog d = new AlertDialog.Builder(a)
+                .setView(container)
+                .create();
+
+        Button neg = new Button(a);
+        neg.setText("Cancel");
+        neg.setTextSize(15);
+        neg.setAllCaps(false);
+        neg.setGravity(Gravity.CENTER);
+        neg.setTextColor(0xFFDCDCDC);
+        neg.setBackground(buttonDrawable(0xFF3A3A3C, 0xFF48484A, 10f, a));
+        setClickWithHaptic(neg, button -> d.dismiss());
+
+        Button pos = new Button(a);
+        pos.setText("Confirm");
+        pos.setTextSize(15);
+        pos.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        pos.setAllCaps(false);
+        pos.setGravity(Gravity.CENTER);
+        pos.setTextColor(0xFFFFFFFF);
+        pos.setBackground(buttonDrawable(0x773e8bff, 0x553e8bff, 10f, a));
         setClickWithHaptic(pos, button -> {
             d.dismiss();
             onConfirm.run();

@@ -1,6 +1,7 @@
 package research.pico.librarycategories;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.*;
 import android.graphics.Outline;
 import android.graphics.drawable.Drawable;
@@ -16,7 +17,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public final class HookEntry implements IXposedHookLoadPackage {
     private static final String APP="com.pvr.appmanager.",NAV="com.bytedance.osui.grouplist.OSUISideNavigation";
-    static final String MANAGE="pico_manage_categories",MENU="pico_edit_categories",HIDE="pico_hide_app";
+    static final String MANAGE="pico_manage_categories",MENU="pico_edit_categories",HIDE="pico_hide_app",FORCE_STOP="pico_force_stop_app";
     private static volatile WeakReference<Activity> currentActivity;
     private Categories categories;
     private ClassLoader targetLoader;
@@ -115,13 +116,21 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 List<Object> rows=new ArrayList<>((List<?>)p.getResult());
                 Object m1=XposedHelpers.newInstance(menu,MENU,android.R.string.untitled,0xCCFFFFFF,p.args[0],p.args[1]);
                 Object m2=XposedHelpers.newInstance(menu,HIDE,android.R.string.untitled,0xCCFFFFFF,p.args[0],p.args[1]);
+                Object m3=XposedHelpers.newInstance(menu,FORCE_STOP,android.R.string.untitled,0xddf2453f,p.args[0],p.args[1]);
                 int insertPos=-1;
                 for(int i=0;i<rows.size();i++){
                     String k=(String)XposedHelpers.callMethod(rows.get(i),"getKey");
                     if("delete".equalsIgnoreCase(k)){insertPos=i;break;}
                 }
-                if(insertPos>=0){rows.add(insertPos,m1);rows.add(insertPos+1,m2);}
-                else{rows.add(m1);rows.add(m2);}
+                if(insertPos>=0){
+                    rows.add(insertPos,m1);
+                    rows.add(insertPos+1,m2);
+                    rows.add(insertPos+2,m3);
+                }else{
+                    rows.add(m1);
+                    rows.add(m2);
+                    rows.add(m3);
+                }
                 p.setResult(rows);
             }
         });
@@ -129,12 +138,12 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){
                 if(!(p.getResult() instanceof TextView))return;
                 Object menuBean=p.args[1];String key=(String)XposedHelpers.callMethod(menuBean,"getKey");
-                if(!MENU.equals(key)&&!HIDE.equals(key))return;
+                if(!MENU.equals(key)&&!HIDE.equals(key)&&!FORCE_STOP.equals(key))return;
                 TextView row=(TextView)p.getResult();Object helperObject=p.thisObject;
-                row.setTextColor(0xCCFFFFFF);
                 Object app=XposedHelpers.callMethod(menuBean,"getAppData");
                 Context c=(Context)p.args[0];
                 if(MENU.equals(key)){
+                    row.setTextColor(0xCCFFFFFF);
                     row.setText("Categories…");
                     row.setOnClickListener(v->{
                         Object ref=XposedHelpers.getAdditionalInstanceField(helperObject,"picoPopup");
@@ -142,6 +151,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                         Activity a=activity(v.getContext());if(a!=null)CategoryUi.CategoryAssigner(a,store(a),pkg(app),(String)XposedHelpers.callMethod(app,"getName"),()->refresh(a));
                     });
                 }else if(HIDE.equals(key)){
+                    row.setTextColor(0xCCFFFFFF);
                     Categories data=store(c);String appPkg=pkg(app);boolean isHidden=data.isHidden(appPkg);
                     row.setText(isHidden?"Unhide":"Hide");
                     row.setOnClickListener(v->{
@@ -149,6 +159,29 @@ public final class HookEntry implements IXposedHookLoadPackage {
                         if(ref instanceof WeakReference){Object popup=((WeakReference<?>)ref).get();if(popup instanceof PopupWindow)((PopupWindow)popup).dismiss();}
                         Activity a=activity(v.getContext());
                         if(a!=null){data.setAppHidden(appPkg,!isHidden);refresh(a);}
+                    });
+                }else if(FORCE_STOP.equals(key)){
+                    row.setTextColor(0xddf2453f);
+                    row.setText("Force Stop");
+                    row.setOnClickListener(v->{
+                        Object ref=XposedHelpers.getAdditionalInstanceField(helperObject,"picoPopup");
+                        if(ref instanceof WeakReference){Object popup=((WeakReference<?>)ref).get();if(popup instanceof PopupWindow)((PopupWindow)popup).dismiss();}
+                        String appPkg=pkg(app);
+                        Activity a=activity(v.getContext());
+                        if(a!=null){
+                            CategoryUi.ForceStopConfirmDialog(a, appPkg, ()->{
+                                try{
+                                    ActivityManager am=(ActivityManager)a.getSystemService(Context.ACTIVITY_SERVICE);
+                                    if(am!=null){
+                                        try{XposedHelpers.callMethod(am,"forceStopPackage",appPkg);}catch(Throwable ignored){}
+                                        am.killBackgroundProcesses(appPkg);
+                                    }
+                                    Toast.makeText(a,"Force stopped "+appPkg,Toast.LENGTH_SHORT).show();
+                                }catch(Throwable t){
+                                    Toast.makeText(a,"Could not force stop",Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        }
                     });
                 }
             }
@@ -188,6 +221,30 @@ public final class HookEntry implements IXposedHookLoadPackage {
                     if(a!=null){data.setAppHidden(appPkg,!isHidden);refresh(a);}
                 });
                 list.addView(hideRow,new LinearLayout.LayoutParams(params));
+
+                TextView forceStopRow=(TextView)XposedHelpers.newInstance(tvClass,c);
+                forceStopRow.setText("Force Stop");forceStopRow.setTextColor(0xddf2453f);forceStopRow.setGravity(Gravity.CENTER_VERTICAL);
+                forceStopRow.setPadding(padding,0,0,0);forceStopRow.setTextSize(0,c.getResources().getDimension(size));forceStopRow.setBackgroundResource(background);
+                forceStopRow.setOnClickListener(v->{
+                    PopupWindow popup=u.popup.get();if(popup!=null)popup.dismiss();
+                    String stopPkg=pkg(u.app);
+                    Activity a=activity(c);
+                    if(a!=null){
+                        CategoryUi.ForceStopConfirmDialog(a, stopPkg, ()->{
+                            try{
+                                ActivityManager am=(ActivityManager)a.getSystemService(Context.ACTIVITY_SERVICE);
+                                if(am!=null){
+                                    try{XposedHelpers.callMethod(am,"forceStopPackage",stopPkg);}catch(Throwable ignored){}
+                                    am.killBackgroundProcesses(stopPkg);
+                                }
+                                Toast.makeText(c,"Force stopped "+stopPkg,Toast.LENGTH_SHORT).show();
+                            }catch(Throwable t){
+                                Toast.makeText(c,"Could not force stop",Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+                });
+                list.addView(forceStopRow,new LinearLayout.LayoutParams(params));
             }
             @Override protected void afterHookedMethod(MethodHookParam p){UnknownMenu u=unknown.get();if(u!=null&&p.getResult() instanceof PopupWindow)u.popup.set((PopupWindow)p.getResult());}
         });
