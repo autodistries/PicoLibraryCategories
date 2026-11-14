@@ -1,7 +1,10 @@
 package research.pico.librarycategories;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.*;
+import android.graphics.Outline;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.util.SparseArray;
 import android.view.*;
@@ -14,7 +17,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public final class HookEntry implements IXposedHookLoadPackage {
     private static final String APP="com.pvr.appmanager.",NAV="com.bytedance.osui.grouplist.OSUISideNavigation";
-    static final String MANAGE="pico_manage_categories",MENU="pico_edit_categories",HIDE="pico_hide_app";
+    static final String MANAGE="pico_manage_categories",MENU="pico_edit_categories",HIDE="pico_hide_app",FORCE_STOP="pico_force_stop_app";
     private static volatile WeakReference<Activity> currentActivity;
     private Categories categories;
     private ClassLoader targetLoader;
@@ -65,7 +68,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         XposedHelpers.findAndHookMethod(navType,"t",View.class,new XC_MethodHook(){
             @Override protected void beforeHookedMethod(MethodHookParam p){
                 View item=(View)p.args[0];if(!MANAGE.equals(item.getTag()))return;
-                p.setResult(null);Activity a=activity(item.getContext());if(a!=null)CategoryUi.manage(a,store(a),()->refresh(a));
+                p.setResult(null);Activity a=activity(item.getContext());if(a!=null)CategoryUi.CategoriesManager(a,store(a),()->refresh(a));
             }
         });
         XposedHelpers.findAndHookMethod(activityType,"getCategoryIndex",boolean.class,String.class,new XC_MethodHook(){
@@ -94,7 +97,8 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){
                 Activity a=(Activity)p.thisObject;
                 currentActivity=new WeakReference<>(a);
-                if(a.getIntent().getBooleanExtra(MANAGE,false)){a.getIntent().removeExtra(MANAGE);a.getWindow().getDecorView().post(()->CategoryUi.manage(a,store(a),()->refresh(a)));}
+                a.getWindow().getDecorView().post(()->setupTopManageButton(a));
+                if(a.getIntent().getBooleanExtra(MANAGE,false)){a.getIntent().removeExtra(MANAGE);a.getWindow().getDecorView().post(()->CategoryUi.CategoriesManager(a,store(a),()->refresh(a)));}
             }
         });
         XposedHelpers.findAndHookMethod(Activity.class,"onNewIntent",Intent.class,new XC_MethodHook(){
@@ -102,7 +106,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 if(!activityType.isInstance(p.thisObject))return;
                 Intent intent=(Intent)p.args[0];if(!intent.getBooleanExtra(MANAGE,false))return;
                 intent.removeExtra(MANAGE);Activity a=(Activity)p.thisObject;a.setIntent(intent);
-                a.getWindow().getDecorView().post(()->CategoryUi.manage(a,store(a),()->refresh(a)));
+                a.getWindow().getDecorView().post(()->CategoryUi.CategoriesManager(a,store(a),()->refresh(a)));
             }
         });
         Class<?> helper=XposedHelpers.findClass(APP+"utils.menu.MoreMenusHelper",cl);
@@ -110,8 +114,23 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){
                 if(p.hasThrowable()||!appData.isInstance(p.args[0])||p.getResult()==null)return;
                 List<Object> rows=new ArrayList<>((List<?>)p.getResult());
-                rows.add(XposedHelpers.newInstance(menu,MENU,android.R.string.untitled,android.graphics.Color.WHITE,p.args[0],p.args[1]));
-                rows.add(XposedHelpers.newInstance(menu,HIDE,android.R.string.untitled,android.graphics.Color.WHITE,p.args[0],p.args[1]));
+                Object m1=XposedHelpers.newInstance(menu,MENU,android.R.string.untitled,0xCCFFFFFF,p.args[0],p.args[1]);
+                Object m2=XposedHelpers.newInstance(menu,HIDE,android.R.string.untitled,0xCCFFFFFF,p.args[0],p.args[1]);
+                Object m3=XposedHelpers.newInstance(menu,FORCE_STOP,android.R.string.untitled,0xddf2453f,p.args[0],p.args[1]);
+                int insertPos=-1;
+                for(int i=0;i<rows.size();i++){
+                    String k=(String)XposedHelpers.callMethod(rows.get(i),"getKey");
+                    if("delete".equalsIgnoreCase(k)){insertPos=i;break;}
+                }
+                if(insertPos>=0){
+                    rows.add(insertPos,m1);
+                    rows.add(insertPos+1,m2);
+                    rows.add(insertPos+2,m3);
+                }else{
+                    rows.add(m1);
+                    rows.add(m2);
+                    rows.add(m3);
+                }
                 p.setResult(rows);
             }
         });
@@ -119,18 +138,20 @@ public final class HookEntry implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p){
                 if(!(p.getResult() instanceof TextView))return;
                 Object menuBean=p.args[1];String key=(String)XposedHelpers.callMethod(menuBean,"getKey");
-                if(!MENU.equals(key)&&!HIDE.equals(key))return;
+                if(!MENU.equals(key)&&!HIDE.equals(key)&&!FORCE_STOP.equals(key))return;
                 TextView row=(TextView)p.getResult();Object helperObject=p.thisObject;
                 Object app=XposedHelpers.callMethod(menuBean,"getAppData");
                 Context c=(Context)p.args[0];
                 if(MENU.equals(key)){
+                    row.setTextColor(0xCCFFFFFF);
                     row.setText("Categories…");
                     row.setOnClickListener(v->{
                         Object ref=XposedHelpers.getAdditionalInstanceField(helperObject,"picoPopup");
                         if(ref instanceof WeakReference){Object popup=((WeakReference<?>)ref).get();if(popup instanceof PopupWindow)((PopupWindow)popup).dismiss();}
-                        Activity a=activity(v.getContext());if(a!=null)CategoryUi.assign(a,store(a),pkg(app),(String)XposedHelpers.callMethod(app,"getName"),()->refresh(a));
+                        Activity a=activity(v.getContext());if(a!=null)CategoryUi.CategoryAssigner(a,store(a),pkg(app),(String)XposedHelpers.callMethod(app,"getName"),()->refresh(a));
                     });
                 }else if(HIDE.equals(key)){
+                    row.setTextColor(0xCCFFFFFF);
                     Categories data=store(c);String appPkg=pkg(app);boolean isHidden=data.isHidden(appPkg);
                     row.setText(isHidden?"Unhide":"Hide");
                     row.setOnClickListener(v->{
@@ -138,6 +159,29 @@ public final class HookEntry implements IXposedHookLoadPackage {
                         if(ref instanceof WeakReference){Object popup=((WeakReference<?>)ref).get();if(popup instanceof PopupWindow)((PopupWindow)popup).dismiss();}
                         Activity a=activity(v.getContext());
                         if(a!=null){data.setAppHidden(appPkg,!isHidden);refresh(a);}
+                    });
+                }else if(FORCE_STOP.equals(key)){
+                    row.setTextColor(0xddf2453f);
+                    row.setText("Force Stop");
+                    row.setOnClickListener(v->{
+                        Object ref=XposedHelpers.getAdditionalInstanceField(helperObject,"picoPopup");
+                        if(ref instanceof WeakReference){Object popup=((WeakReference<?>)ref).get();if(popup instanceof PopupWindow)((PopupWindow)popup).dismiss();}
+                        String appPkg=pkg(app);
+                        Activity a=activity(v.getContext());
+                        if(a!=null){
+                            CategoryUi.ForceStopConfirmDialog(a, appPkg, ()->{
+                                try{
+                                    ActivityManager am=(ActivityManager)a.getSystemService(Context.ACTIVITY_SERVICE);
+                                    if(am!=null){
+                                        try{XposedHelpers.callMethod(am,"forceStopPackage",appPkg);}catch(Throwable ignored){}
+                                        am.killBackgroundProcesses(appPkg);
+                                    }
+                                    Toast.makeText(a,"Force stopped "+appPkg,Toast.LENGTH_SHORT).show();
+                                }catch(Throwable t){
+                                    Toast.makeText(a,"Could not force stop",Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        }
                     });
                 }
             }
@@ -162,7 +206,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 TextView row=(TextView)XposedHelpers.newInstance(tvClass,c);
                 row.setText("Categories…");row.setTextColor(android.graphics.Color.WHITE);row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setPadding(padding,0,0,0);row.setTextSize(0,c.getResources().getDimension(size));row.setBackgroundResource(background);
-                row.setOnClickListener(v->{PopupWindow popup=u.popup.get();if(popup!=null)popup.dismiss();Activity a=activity(c);if(a!=null)CategoryUi.assign(a,store(a),pkg(u.app),(String)XposedHelpers.callMethod(u.app,"getName"),()->refresh(a));});
+                row.setOnClickListener(v->{PopupWindow popup=u.popup.get();if(popup!=null)popup.dismiss();Activity a=activity(c);if(a!=null)CategoryUi.CategoryAssigner(a,store(a),pkg(u.app),(String)XposedHelpers.callMethod(u.app,"getName"),()->refresh(a));});
                 View existing=list.getChildCount()>0?list.getChildAt(0):null;
                 LinearLayout.LayoutParams params=existing==null?new LinearLayout.LayoutParams(-1,64):new LinearLayout.LayoutParams(existing.getLayoutParams());
                 list.addView(row,params);
@@ -177,10 +221,165 @@ public final class HookEntry implements IXposedHookLoadPackage {
                     if(a!=null){data.setAppHidden(appPkg,!isHidden);refresh(a);}
                 });
                 list.addView(hideRow,new LinearLayout.LayoutParams(params));
+
+                TextView forceStopRow=(TextView)XposedHelpers.newInstance(tvClass,c);
+                forceStopRow.setText("Force Stop");forceStopRow.setTextColor(0xddf2453f);forceStopRow.setGravity(Gravity.CENTER_VERTICAL);
+                forceStopRow.setPadding(padding,0,0,0);forceStopRow.setTextSize(0,c.getResources().getDimension(size));forceStopRow.setBackgroundResource(background);
+                forceStopRow.setOnClickListener(v->{
+                    PopupWindow popup=u.popup.get();if(popup!=null)popup.dismiss();
+                    String stopPkg=pkg(u.app);
+                    Activity a=activity(c);
+                    if(a!=null){
+                        CategoryUi.ForceStopConfirmDialog(a, stopPkg, ()->{
+                            try{
+                                ActivityManager am=(ActivityManager)a.getSystemService(Context.ACTIVITY_SERVICE);
+                                if(am!=null){
+                                    try{XposedHelpers.callMethod(am,"forceStopPackage",stopPkg);}catch(Throwable ignored){}
+                                    am.killBackgroundProcesses(stopPkg);
+                                }
+                                Toast.makeText(c,"Force stopped "+stopPkg,Toast.LENGTH_SHORT).show();
+                            }catch(Throwable t){
+                                Toast.makeText(c,"Could not force stop",Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+                });
+                list.addView(forceStopRow,new LinearLayout.LayoutParams(params));
             }
             @Override protected void afterHookedMethod(MethodHookParam p){UnknownMenu u=unknown.get();if(u!=null&&p.getResult() instanceof PopupWindow)u.popup.set((PopupWindow)p.getResult());}
         });
         XposedBridge.log("PICO Categories: Library hooks installed");
+    }
+    private void setupTopManageButton(Activity a){
+        if(a==null||a.isFinishing())return;
+        View decor=a.getWindow().getDecorView();
+        int filterId=a.getResources().getIdentifier("mAppFilter","id","com.pvr.appmanager");
+        View appFilter=filterId!=0?decor.findViewById(filterId):null;
+        if(appFilter==null){
+            decor.postDelayed(()->setupTopManageButton(a),200);
+            return;
+        }
+        if(!(appFilter.getParent() instanceof ViewGroup))return;
+        ViewGroup container=(ViewGroup)appFilter.getParent();
+        if(container.findViewWithTag("pico_manage_top_btn")!=null)return;
+
+        int styleId=a.getResources().getIdentifier("mMenuStyle","id","com.pvr.appmanager");
+        View menuStyle=styleId!=0?decor.findViewById(styleId):null;
+        View referenceView=menuStyle!=null?menuStyle:appFilter;
+
+        View btn;
+        try{
+            Class<?> osuiClass=XposedHelpers.findClass("com.bytedance.osui.common.OSUIImageButton",targetLoader);
+            btn=(View)XposedHelpers.newInstance(osuiClass,a,null);
+        }catch(Throwable fallback){
+            btn=new ImageView(a);
+        }
+        btn.setTag("pico_manage_top_btn");
+        btn.setFocusable(true);
+        btn.setClickable(true);
+        try{
+            XposedHelpers.callMethod(btn,"setVibrateEnabled",true);
+            XposedHelpers.callMethod(btn,"setSoundEffectEnabled",true);
+        }catch(Throwable ignored){}
+
+        int radiusPx=(int)(8*a.getResources().getDisplayMetrics().density);
+        try{
+            int r=(Integer)XposedHelpers.callMethod(referenceView,"getRadius");
+            if(r>0)radiusPx=r;
+        }catch(Throwable ignored){}
+
+        try{
+            XposedHelpers.callMethod(btn,"setRadius",radiusPx);
+        }catch(Throwable ignored){}
+
+        final float finalRadius=radiusPx;
+        btn.setOutlineProvider(new ViewOutlineProvider(){
+            @Override public void getOutline(View view,Outline outline){
+                outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),finalRadius);
+            }
+        });
+        btn.setClipToOutline(true);
+
+        if(btn instanceof ImageView){
+            ImageView iv=(ImageView)btn;
+            boolean loaded=false;
+            try{
+                Context moduleContext=a.createPackageContext("research.pico.librarycategories",Context.CONTEXT_IGNORE_SECURITY);
+                int iconId=moduleContext.getResources().getIdentifier("ic_svg_menu_manage","drawable","research.pico.librarycategories");
+                if(iconId!=0){
+                    Drawable d=moduleContext.getDrawable(iconId);
+                    if(d!=null){
+                        iv.setImageDrawable(d);
+                        iv.clearColorFilter();
+                        loaded=true;
+                    }
+                }
+            }catch(Throwable t){
+                XposedBridge.log("PICO Categories: module context drawable failed "+t);
+            }
+            if(!loaded){
+                iv.setImageDrawable(a.getDrawable(android.R.drawable.ic_menu_manage));
+                iv.setColorFilter(0xFFDCDCDC);
+            }
+            iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        }
+
+        if(referenceView.getBackground()!=null){
+            try{
+                btn.setBackground(referenceView.getBackground().getConstantState().newDrawable().mutate());
+            }catch(Throwable ignored){
+                btn.setBackground(referenceView.getBackground());
+            }
+        }
+        if(referenceView.getForeground()!=null){
+            try{
+                btn.setForeground(referenceView.getForeground().getConstantState().newDrawable().mutate());
+            }catch(Throwable ignored){
+                btn.setForeground(referenceView.getForeground());
+            }
+        }
+
+        btn.setPadding(referenceView.getPaddingLeft(),referenceView.getPaddingTop(),referenceView.getPaddingRight(),referenceView.getPaddingBottom());
+
+        ViewGroup.LayoutParams origLp=referenceView.getLayoutParams();
+        LinearLayout.LayoutParams lp;
+        if(origLp instanceof LinearLayout.LayoutParams){
+            LinearLayout.LayoutParams old=(LinearLayout.LayoutParams)origLp;
+            lp=new LinearLayout.LayoutParams(old.width,old.height);
+            lp.leftMargin=old.leftMargin;
+            lp.rightMargin=old.rightMargin;
+            lp.topMargin=old.topMargin;
+            lp.bottomMargin=old.bottomMargin;
+            lp.gravity=old.gravity;
+        }else{
+            int dp48=(int)(48*a.getResources().getDisplayMetrics().density);
+            int dp40=(int)(40*a.getResources().getDisplayMetrics().density);
+            lp=new LinearLayout.LayoutParams(dp48,dp40);
+            int margin=(int)(8*a.getResources().getDisplayMetrics().density);
+            lp.rightMargin=margin;
+        }
+
+        btn.setOnHoverListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_HOVER_ENTER) {
+                try {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                } catch (Throwable ignored) {}
+            }
+            return false;
+        });
+
+        btn.setOnClickListener(v->{
+            try{
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            }catch(Throwable ignored){}
+            Activity act=activity(v.getContext());
+            if(act!=null){
+                CategoryUi.CategoriesManager(act,store(act),()->refresh(act));
+            }
+        });
+
+        int index=container.indexOfChild(appFilter);
+        container.addView(btn,Math.max(0,index),lp);
     }
     private void makeScrollable(ViewGroup nav){
         if(nav.getParent() instanceof ScrollView||!(nav.getParent() instanceof ViewGroup))return;
@@ -221,8 +420,10 @@ public final class HookEntry implements IXposedHookLoadPackage {
         if(original==null||Proxy.isProxyClass(original.getClass()))return original;
         Class<?> type=XposedHelpers.findClass(APP+"Filter$a",targetLoader);
         return Proxy.newProxyInstance(targetLoader,new Class<?>[]{type},(proxy,method,args)->{
+            String tag=(String)XposedHelpers.callMethod(original,"a");
+            Categories.Category cat=categories!=null?categories.find(tag):null;
             switch(method.getName()){
-                case "a":return XposedHelpers.callMethod(original,"a");
+                case "a":return tag;
                 case "b":{
                     @SuppressWarnings("unchecked")
                     List<Object> list=(List<Object>)XposedHelpers.callMethod(original,"b",args[0]);
@@ -234,15 +435,31 @@ public final class HookEntry implements IXposedHookLoadPackage {
                             if(selected!=null&&selected.startsWith(Categories.PREFIX))return list;
                         }catch(Throwable ignored){}
                     }
+                    List<Object> result=new ArrayList<>(list);
+                    if(cat!=null&&!cat.members.isEmpty()&&a!=null){
+                        try{
+                            @SuppressWarnings("unchecked")
+                            List<Object> master=(List<Object>)XposedHelpers.callMethod(a,"getMAllApp");
+                            if(master!=null){
+                                for(Object app:master){
+                                    if(cat.members.contains(pkg(app))&&!result.contains(app)){
+                                        result.add(app);
+                                    }
+                                }
+                            }
+                        }catch(Throwable ignored){}
+                    }
+                    if(cat!=null&&!cat.exclusions.isEmpty()){
+                        result.removeIf(app->cat.exclusions.contains(pkg(app)));
+                    }
                     Set<String> hiddenApps=categories.getHiddenMembers();
-                    if(hiddenApps.isEmpty())return list;
-                    List<Object> filtered=new ArrayList<>();
-                    for(Object app:list)if(!hiddenApps.contains(pkg(app)))filtered.add(app);
-                    return filtered;
+                    if(!hiddenApps.isEmpty()){
+                        result.removeIf(app->hiddenApps.contains(pkg(app)));
+                    }
+                    return result;
                 }
                 case "c":{
                     boolean res=(Boolean)XposedHelpers.callMethod(original,"c",args[0]);
-                    if(!res||categories==null)return res;
                     Activity a=currentActivity!=null?currentActivity.get():null;
                     if(a!=null){
                         try{
@@ -250,7 +467,13 @@ public final class HookEntry implements IXposedHookLoadPackage {
                             if(selected!=null&&selected.startsWith(Categories.PREFIX))return res;
                         }catch(Throwable ignored){}
                     }
-                    return !categories.getHiddenMembers().contains(pkg(args[0]));
+                    String p=pkg(args[0]);
+                    if(cat!=null){
+                        if(cat.members.contains(p))res=true;
+                        if(cat.exclusions.contains(p))res=false;
+                    }
+                    if(categories!=null&&categories.getHiddenMembers().contains(p))res=false;
+                    return res;
                 }
                 case "toString":return "PicoStockFilterWrapper("+original+")";
                 case "hashCode":return System.identityHashCode(proxy);
@@ -292,6 +515,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
     }
     private void refresh(Activity a){
         try{
+            a.getWindow().getDecorView().post(()->setupTopManageButton(a));
             Navigation current=navigation(a);
             if(current!=null){
                 List<String> expected=new ArrayList<>();for(Categories.Category c:categories.items)if(!c.hidden&&(c.custom()||current.stock.containsKey(c.id)))expected.add(c.id+"/"+c.name);
@@ -310,7 +534,6 @@ public final class HookEntry implements IXposedHookLoadPackage {
             ((TextView)XposedHelpers.callMethod(row,"getTextView")).setText(c.name);next.add(row);
         }
         if(next.isEmpty()){View all=n.stock.get("all");if(all!=null)next.add(all);}
-        View manage=(View)XposedHelpers.callMethod(n.view,"n",context.getDrawable(android.R.drawable.ic_menu_manage),"Manage categories…");manage.setTag(MANAGE);next.add(manage);
         // Keep header/search children, but update BOTH the visual and selection-index model.
         for(View old:n.visible)n.view.removeView(old);
         SparseArray<Object> items=(SparseArray<Object>)XposedHelpers.getObjectField(n.section,"d");items.clear();

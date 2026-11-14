@@ -7,11 +7,21 @@ class CategoryModel {
     static final class Category {
         final String id;volatile String name;volatile boolean hidden;
         final Set<String> members=java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final Set<String> exclusions=java.util.concurrent.ConcurrentHashMap.newKeySet();
         Category(String id,String name){this.id=id;this.name=name;}
         boolean custom(){return id.startsWith(PREFIX);}
     }
     final List<Category> items=new java.util.concurrent.CopyOnWriteArrayList<>();
-    Category find(String id){for(Category c:items)if(c.id.equals(id))return c;return null;}
+    Category find(String id){
+        for(Category c:items){
+            if(c.id.equals(id))return c;
+            if("app".equals(id)&&"apps".equals(c.id))return c;
+            if("apps".equals(id)&&"app".equals(c.id))return c;
+            if("game".equals(id)&&"entertainment".equals(c.id))return c;
+            if("entertainment".equals(id)&&"game".equals(c.id))return c;
+        }
+        return null;
+    }
     Category ensure(String id,String name){Category c=find(id);if(c==null){c=new Category(id,name);items.add(c);}return c;}
     Category ensureHidden(){
         Category c=find(HIDDEN_ID);
